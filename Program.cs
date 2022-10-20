@@ -1,12 +1,60 @@
 ﻿using System;
+using System.Diagnostics;
+using System.Threading.Tasks;
 
-namespace ConsoleApp1
+
+namespace Restaurant.Booking
 {
-    class Program
+    public static class Program
     {
-        static void Main(string[] args)
+        public static object Host { get; private set; }
+
+        public static void Main(string[] args)
         {
-            Console.WriteLine("Извините! Д/З будет здесь 21.10.2022 08:00 простите немогу загрузить раньше.");
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            CreateHostBuilder(args).Build().Run();
         }
+
+        private static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
+                .ConfigureServices((hostContext, services) =>
+                {
+                    services.AddMassTransit(x =>
+                    {
+                        x.AddConsumer<RestaurantBookingRequestConsumer>()
+                            .Endpoint(e =>
+                            {
+                                e.Temporary = true;
+                            });
+
+                        x.AddConsumer<BookingRequestFaultConsumer>()
+                            .Endpoint(e =>
+                            {
+                                e.Temporary = true;
+                            });
+
+                        x.AddSagaStateMachine<RestaurantBookingSaga, RestaurantBooking>()
+                            .Endpoint(e => e.Temporary = true)
+                            .InMemoryRepository();
+
+                        x.AddDelayedMessageScheduler();
+
+                        x.UsingRabbitMq((context, cfg) =>
+                        {
+                            cfg.UseDelayedMessageScheduler();
+                            cfg.UseInMemoryOutbox();
+                            cfg.ConfigureEndpoints(context);
+                        });
+
+                    });
+
+                    services.AddMassTransitHostedService();
+
+                    services.AddTransient<RestaurantBooking>();
+                    services.AddTransient<RestaurantBookingSaga>();
+                    services.AddTransient<Restaurant>();
+
+                    services.AddHostedService<Worker>();
+                });
     }
 }
